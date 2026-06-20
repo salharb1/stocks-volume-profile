@@ -1,5 +1,5 @@
-// Networking layer. Turns a ticker into an array of Candles. Knows nothing
-// about the UI or the profile math.
+// Networking layer. Turns a ticker into an array of Candles (and fundamental
+// data). Knows nothing about the UI or the profile math.
 
 const API_KEY = import.meta.env.VITE_MARKET_API_KEY
 const BASE_URL = 'https://www.alphavantage.co/query'
@@ -56,6 +56,67 @@ export async function fetchDailyCandles(symbol) {
 
   const json = await res.json()
   return parseDailySeries(json, cleaned)
+}
+
+/**
+ * Fetch the last 3 years of annual cash flow data for a ticker via Alpha Vantage.
+ *
+ * Returns an array of up to 3 entries (newest first):
+ *   { year: number, operatingCashFlow: number, capEx: number, freeCashFlow: number }
+ *
+ * Throws MarketDataError on API problems. Returns [] (not throws) when the
+ * symbol has no cash flow data (e.g., ETFs).
+ *
+ * @param {string} symbol
+ * @returns {Promise<Array<{year:number, operatingCashFlow:number, capEx:number, freeCashFlow:number}>>}
+ */
+export async function fetchCashFlow(symbol) {
+  if (!API_KEY || API_KEY === 'your_api_key_here') {
+    throw new MarketDataError('missing-key', 'Add VITE_MARKET_API_KEY to your .env file.')
+  }
+
+  const cleaned = symbol.trim().toUpperCase()
+  const url =
+    `${BASE_URL}?function=CASH_FLOW&symbol=${encodeURIComponent(cleaned)}&apikey=${API_KEY}`
+
+  let res
+  try {
+    res = await fetch(url)
+  } catch (e) {
+    throw new MarketDataError('network', e.message || 'Network request failed.')
+  }
+
+  if (res.status === 429) {
+    throw new MarketDataError('rate-limited', 'API rate limit reached. Try again shortly.')
+  }
+  if (!res.ok) {
+    throw new MarketDataError('network', `Request failed (HTTP ${res.status}).`)
+  }
+
+  const json = await res.json()
+
+  if (json.Note || json.Information) {
+    throw new MarketDataError('rate-limited', 'API rate limit reached. Try again shortly.')
+  }
+
+  const reports = json.annualReports
+  if (!Array.isArray(reports) || reports.length === 0) return []
+
+  return reports
+    .slice(0, 3)
+    .map((r) => {
+      const ocf = Number(r.operatingCashflow)
+      const capex = Math.abs(Number(r.capitalExpenditures))
+      const fcf = Number.isFinite(ocf) && Number.isFinite(capex) ? ocf - capex : ocf
+      return {
+        year: new Date(r.fiscalDateEnding).getFullYear(),
+        operatingCashFlow: Number.isFinite(ocf) ? ocf : null,
+        capEx: Number.isFinite(capex) ? capex : null,
+        freeCashFlow: Number.isFinite(fcf) ? fcf : null,
+      }
+    })
+    .filter((r) => r.freeCashFlow !== null)
+    .reverse() // oldest → newest for chart left-to-right
 }
 
 /** Decode Alpha Vantage's TIME_SERIES_DAILY payload into sorted candles. */
