@@ -105,7 +105,7 @@
 
 <script>
 (function(){
-  var API_KEY='X1INE4BY0VFOR5CX';
+  var KEYS=['X1INE4BY0VFOR5CX','7HBKTU2HEREW4NB8'];
   var POC='#f59e0b', VA='#3b82f6', OUT='#1e3a5f', HVN='#2dd4bf', LVN='#64748b';
   var state={lookback:60, symbol:null};
   var cache={};
@@ -164,9 +164,20 @@
     return c;
   }
 
-  // ---------- network ----------
-  function getJSON(url){return fetch(url).then(function(r){if(r.status===429)throw{msg:'rate'};if(!r.ok)throw{msg:'http'};return r.json();});}
-  function q(fn,extra){return 'https://www.alphavantage.co/query?function='+fn+'&apikey='+API_KEY+(extra||'');}
+  // ---------- network (rotates across keys to extend the daily quota) ----------
+  function q(fn,extra,key){return 'https://www.alphavantage.co/query?function='+fn+'&apikey='+key+(extra||'');}
+  function avFetch(fn,extra){
+    var i=0;
+    function attempt(){
+      return fetch(q(fn,extra,KEYS[i])).then(function(r){
+        if(r.status===429) return advance();
+        if(!r.ok) throw {msg:'http'};
+        return r.json().then(function(j){ if(j&&(j.Note||j.Information)) return advance(); return j; });
+      });
+    }
+    function advance(){ i++; if(i<KEYS.length) return attempt(); throw {msg:'rate',rl:true}; }
+    return attempt();
+  }
 
   function analyze(){
     var sym=(document.getElementById('ticker').value||'').trim().toUpperCase().replace(/[^A-Z.\-]/g,'');
@@ -179,12 +190,12 @@
     if(fresh){cache[sym]=cache[sym]||{};cache[sym].daily=fresh;renderAll();document.getElementById('go').disabled=false;return;}
 
     body.innerHTML='<div class="msg"><div class="spin"></div>Loading market data…</div>';
-    getJSON(q('TIME_SERIES_DAILY','&symbol='+encodeURIComponent(sym)+'&outputsize=compact'))
+    avFetch('TIME_SERIES_DAILY','&symbol='+encodeURIComponent(sym)+'&outputsize=compact')
       .then(function(j){var c=parseSeries(j);cache[sym]=cache[sym]||{};cache[sym].daily=c;lsSet('vp:daily:'+sym,c);renderAll();})
       .catch(function(e){
         var stale=lsGet('vp:daily:'+sym,0);
         if(stale){cache[sym]=cache[sym]||{};cache[sym].daily=stale;state.stale=true;renderAll();}
-        else body.innerHTML='<div class="err">'+(e&&e.msg&&e.msg.length>5?e.msg:'Network problem. Check your connection and retry.')+'</div>';
+        else{var m=e&&e.rl?'Daily API limit reached on all keys — resets once per day.':(e&&e.msg&&e.msg.length>5?e.msg:'Network problem. Check your connection and retry.');body.innerHTML='<div class="err">'+m+'</div>';}
       })
       .finally(function(){document.getElementById('go').disabled=false;});
   }
@@ -193,7 +204,7 @@
   function loadExtra(field,fn,extra,lskey,sym,refill,cardId,title){
     var el=document.getElementById(cardId);
     el.innerHTML='<div class="card"><div class="ctitle">'+title+'</div><div class="csub" style="margin-top:4px">Loading…</div></div>';
-    getJSON(q(fn,extra)).then(function(j){
+    avFetch(fn,extra).then(function(j){
       var ok=field==='overview'?(j&&j.Symbol):(j&&j.data);
       if(ok){cache[sym]=cache[sym]||{};cache[sym][field]=j;lsSet(lskey,j);if(state.symbol===sym)refill();}
       else throw {rl:!!(j.Note||j.Information)};
