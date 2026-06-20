@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0f17" />
+<title>Volume Profile · Stock Entry Zones</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0f17'/%3E%3Crect x='6' y='18' width='14' height='4' rx='2' fill='%233b82f6'/%3E%3Crect x='6' y='12' width='20' height='4' rx='2' fill='%23f59e0b'/%3E%3Crect x='6' y='6' width='9' height='4' rx='2' fill='%233b82f6'/%3E%3C/svg%3E" />
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{color-scheme:dark}
+  body{margin:0;background:#0b0f17;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,sans-serif;
+       background-image:radial-gradient(40rem 40rem at 90% -10%,rgba(59,130,246,.08),transparent),radial-gradient(40rem 40rem at -10% 110%,rgba(245,158,11,.06),transparent);
+       background-attachment:fixed;min-height:100vh;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .wrap{max-width:680px;margin:0 auto;padding:24px 16px 48px}
+  h1{font-size:26px;font-weight:600;letter-spacing:-.02em;text-align:center;margin:8px 0 2px}
+  h1 span{color:#3b82f6}
+  .sub{text-align:center;color:#64748b;font-size:13px;margin-bottom:22px}
+  .searchrow{display:flex;gap:8px;max-width:440px;margin:0 auto}
+  #ticker{flex:1;background:#121826;border:1px solid rgba(255,255,255,.12);border-radius:13px;padding:13px 16px;color:#e2e8f0;font-size:16px;letter-spacing:.05em;text-transform:uppercase}
+  #ticker:focus{outline:none;border-color:rgba(59,130,246,.6);box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+  #go{background:#3b82f6;border:none;border-radius:11px;color:#fff;font-weight:600;padding:0 20px;font-size:15px;cursor:pointer}
+  #go:active{transform:scale(.98)}
+  #go:disabled{opacity:.45}
+  .chips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:11px}
+  .chip{background:#121826;border:1px solid rgba(255,255,255,.12);color:#94a3b8;font-size:12px;padding:5px 11px;border-radius:8px;cursor:pointer}
+  .chip:active{transform:scale(.97)}
+  .lb{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px}
+  .lb small{font-size:10px;letter-spacing:.18em;color:#64748b;text-transform:uppercase}
+  .lbg{display:inline-flex;background:#121826;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:3px}
+  .lbg button{background:transparent;border:none;color:#94a3b8;font-size:13px;padding:6px 13px;border-radius:7px;cursor:pointer}
+  .lbg button.on{background:#3b82f6;color:#fff}
+  #body{margin-top:22px;display:grid;gap:16px}
+  .card{background:#121826;border:1px solid rgba(245,158,11,.28);border-radius:18px;padding:20px}
+  .chart{background:#10151f;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px}
+  .kez{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#f59e0b;font-size:11px;letter-spacing:.16em;font-weight:600;text-transform:uppercase}
+  .badge{font-size:9.5px;font-weight:600;letter-spacing:.08em;padding:3px 8px;border-radius:7px;white-space:nowrap}
+  .poc{font-size:42px;font-weight:600;letter-spacing:-.02em;color:#fff;margin-top:3px}
+  .divider{height:1px;background:rgba(255,255,255,.1);margin:16px 0}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;gap:6px}
+  .stats .l{font-size:9px;letter-spacing:.08em;color:#64748b;text-transform:uppercase}
+  .stats .v{font-size:14px;font-weight:600;margin-top:3px}
+  .row{display:flex;align-items:center;gap:7px;height:14px}
+  .row .pl{width:58px;text-align:right;font-size:10px;font-variant-numeric:tabular-nums}
+  .track{flex:1;background:rgba(255,255,255,.03);border-radius:3px;overflow:hidden}
+  .fill{height:10px;border-radius:0 3px 3px 0}
+  .legend{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin-top:14px;font-size:10px;color:#94a3b8}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .sw{width:10px;height:10px;border-radius:2px}
+  .msg{text-align:center;padding:40px 16px;color:#94a3b8}
+  .spin{width:30px;height:30px;border:3px solid rgba(255,255,255,.15);border-top-color:#3b82f6;border-radius:50%;margin:0 auto 12px;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .err{color:#fca5a5;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:14px;padding:14px 16px;text-align:center;font-size:14px}
+  footer{text-align:center;font-size:11px;color:#475569;margin-top:28px;line-height:1.6}
+  footer a{color:#64748b}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Volume <span>Profile</span></h1>
+  <div class="sub">Find high-volume nodes &amp; key entry zones for US stocks.</div>
+
+  <div class="searchrow">
+    <input id="ticker" value="AAPL" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="AAPL, TSLA, NVDA…" />
+    <button id="go">Analyze</button>
+  </div>
+  <div class="chips" id="chips"></div>
+
+  <div class="lb">
+    <small>Lookback</small>
+    <div class="lbg" id="lbg">
+      <button data-d="30">30d</button>
+      <button data-d="60" class="on">60d</button>
+      <button data-d="90">90d</button>
+    </div>
+  </div>
+
+  <div id="body"></div>
+
+  <footer>
+    Educational tool · not investment advice · data via
+    <a href="https://www.alphavantage.co" target="_blank" rel="noopener">Alpha Vantage</a><br>
+    Source: <a href="https://github.com/salharb1/stocks-volume-profile" target="_blank" rel="noopener">github.com/salharb1/stocks-volume-profile</a>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var API_KEY = 'X1INE4BY0VFOR5CX';
+  var POC='#f59e0b', VA='#3b82f6', OUT='#1e3a5f';
+  var state={lookback:60, candles:null, symbol:null};
+  var body=document.getElementById('body');
+
+  ['AAPL','TSLA','NVDA','MSFT','AMZN','META'].forEach(function(s){
+    var b=document.createElement('button'); b.className='chip'; b.textContent=s;
+    b.onclick=function(){document.getElementById('ticker').value=s; analyze();};
+    document.getElementById('chips').appendChild(b);
+  });
+
+  function usd(v){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(v);}
+
+  function buildProfile(candles, lookback, binCount, vaPct){
+    binCount=binCount||24; vaPct=vaPct||0.7;
+    var w=candles.slice(-lookback); if(w.length<2)return null;
+    var lo=Math.min.apply(null,w.map(function(c){return c.low;})), hi=Math.max.apply(null,w.map(function(c){return c.high;}));
+    if(!(hi>lo))return null;
+    var bw=(hi-lo)/binCount, bins=[];
+    for(var i=0;i<binCount;i++){var l=lo+i*bw;bins.push({lower:l,upper:l+bw,mid:l+bw/2,volume:0});}
+    w.forEach(function(c){var dL=c.low,dH=Math.max(c.high,c.low+1e-6),sp=dH-dL;bins.forEach(function(b){var ov=Math.min(dH,b.upper)-Math.max(dL,b.lower);if(ov>0)b.volume+=c.volume*(ov/sp);});});
+    var poc=bins.reduce(function(a,b){return b.volume>a.volume?b:a;},bins[0]);
+    var total=bins.reduce(function(s,b){return s+b.volume;},0),pi=bins.indexOf(poc),low=pi,up=pi,acc=bins[pi].volume,target=total*vaPct;
+    while(acc<target&&(low>0||up<bins.length-1)){var bv=low>0?bins[low-1].volume:-1,av=up<bins.length-1?bins[up+1].volume:-1;if(av>=bv){up++;acc+=bins[up].volume;}else{low--;acc+=bins[low].volume;}}
+    return {bins:bins,poc:poc,vaLow:bins[low].lower,vaHigh:bins[up].upper,lastClose:w[w.length-1].close,periodDays:w.length,maxVol:Math.max.apply(null,bins.map(function(b){return b.volume;}))};
+  }
+
+  function parseSeries(json){
+    if(json.Note||json.Information) throw {code:'rate',msg:'API rate limit reached (free tier: 25/day, 5/min). Wait a minute and retry.'};
+    if(json['Error Message']) throw {code:'bad',msg:'Couldn’t find that ticker. Check the symbol.'};
+    var s=json['Time Series (Daily)']; if(!s) throw {code:'nodata',msg:'No price data returned for this symbol.'};
+    var c=Object.keys(s).map(function(d){var r=s[d];return {date:d,low:+r['3. low'],high:+r['2. high'],close:+r['4. close'],volume:+r['5. volume']};})
+      .filter(function(x){return isFinite(x.close)&&isFinite(x.volume);})
+      .sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+    if(!c.length) throw {code:'nodata',msg:'No price data returned for this symbol.'};
+    return c;
+  }
+
+  function loading(){body.innerHTML='<div class="msg"><div class="spin"></div>Building volume profile…</div>';}
+  function error(m){body.innerHTML='<div class="err">'+m+'</div>';}
+
+  function analyze(){
+    var sym=(document.getElementById('ticker').value||'').trim().toUpperCase().replace(/[^A-Z.\-]/g,'');
+    if(!sym)return;
+    document.getElementById('ticker').value=sym;
+    document.getElementById('go').disabled=true;
+    loading();
+    var url='https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol='+encodeURIComponent(sym)+'&outputsize=compact&apikey='+API_KEY;
+    fetch(url).then(function(r){
+      if(r.status===429) throw {code:'rate',msg:'API rate limit reached. Wait a minute and retry.'};
+      if(!r.ok) throw {code:'net',msg:'Request failed (HTTP '+r.status+').'};
+      return r.json();
+    }).then(function(j){
+      state.candles=parseSeries(j); state.symbol=sym; renderProfile();
+    }).catch(function(e){
+      error(e&&e.msg?e.msg:'Network problem. Check your connection and retry.');
+    }).finally(function(){document.getElementById('go').disabled=false;});
+  }
+
+  function renderProfile(){
+    if(!state.candles)return;
+    var p=buildProfile(state.candles,state.lookback);
+    if(!p){error('Not enough data to build a profile.');return;}
+    var sym=state.symbol;
+    var rel=p.lastClose>p.vaHigh?{t:'Price is above the value area — POC may act as support on pullbacks.',c:'#34d399'}
+      :p.lastClose<p.vaLow?{t:'Price is below the value area — POC may act as resistance on bounces.',c:'#fb7185'}
+      :{t:'Price is inside the value area — fair-value zone; expect two-way trade.',c:'#cbd5e1'};
+
+    var rows=p.bins.slice().reverse().map(function(b){
+      var isP=b===p.poc,inVa=b.mid>=p.vaLow&&b.mid<=p.vaHigh,col=isP?POC:inVa?VA:OUT,pct=Math.max(2,(b.volume/p.maxVol)*100);
+      return '<div class="row"><div class="pl" style="color:'+(isP?POC:'#64748b')+'">'+usd(b.mid)+'</div>'
+        +'<div class="track"><div class="fill" style="width:'+pct+'%;background:'+col+'"></div></div>'
+        +(isP?'<span style="font-size:9px;font-weight:600;color:'+POC+';width:26px">POC</span>':'<span style="width:26px"></span>')+'</div>';
+    }).join('');
+
+    body.innerHTML=
+      '<div class="card"><div class="kez"><span><i></i>◎ Key Entry Zone</span>'
+      +'<span class="badge" style="background:rgba(16,185,129,.15);color:#34d399">● LIVE · ALPHA VANTAGE</span></div>'
+      +'<div style="font-size:12px;color:#94a3b8;margin-top:14px">High Volume Node detected for <b style="color:#e2e8f0">'+sym+'</b> at</div>'
+      +'<div class="poc">'+usd(p.poc.mid)+'</div><div class="divider"></div>'
+      +'<div class="stats"><div><div class="l">Value Low</div><div class="v" style="color:#cbd5e1">'+usd(p.vaLow)+'</div></div>'
+      +'<div><div class="l">Last Close</div><div class="v" style="color:'+POC+'">'+usd(p.lastClose)+'</div></div>'
+      +'<div><div class="l">Value High</div><div class="v" style="color:#cbd5e1">'+usd(p.vaHigh)+'</div></div></div>'
+      +'<div style="font-size:12px;color:'+rel.c+';margin-top:15px;line-height:1.5">'+rel.t+'</div>'
+      +'<div style="font-size:10px;color:#475569;margin-top:7px">Based on the last '+p.periodDays+' trading days of real market data.</div></div>'
+      +'<div class="chart"><div style="font-size:13px;font-weight:600;color:#e2e8f0">'+sym+' · Volume by Price</div>'
+      +'<div style="font-size:10px;color:#64748b;margin:2px 0 12px">Horizontal bars show traded volume at each price level.</div>'+rows
+      +'<div class="legend"><span><span class="sw" style="background:'+POC+'"></span>Point of Control</span>'
+      +'<span><span class="sw" style="background:'+VA+'"></span>Value Area (70%)</span>'
+      +'<span><span class="sw" style="background:'+OUT+'"></span>Outside</span></div></div>';
+  }
+
+  document.getElementById('go').onclick=analyze;
+  document.getElementById('ticker').addEventListener('keydown',function(e){if(e.key==='Enter')analyze();});
+  document.getElementById('lbg').addEventListener('click',function(e){
+    var btn=e.target.closest('button'); if(!btn)return;
+    state.lookback=+btn.getAttribute('data-d');
+    Array.prototype.forEach.call(this.children,function(b){b.className=b===btn?'on':'';});
+    renderProfile();
+  });
+
+  analyze();
+})();
+</script>
+</body>
+</html>
