@@ -182,10 +182,10 @@
         c.overview=(j&&j.Symbol)?j:{__err:(j.Note||j.Information)?'rate':'none'}; if(state.symbol===sym)fillSnapshot();
       }).catch(function(){c.overview={__err:'rate'};if(state.symbol===sym)fillSnapshot();});
     }
-    if(!c.news){
-      getJSON(q('NEWS_SENTIMENT','&tickers='+encodeURIComponent(sym)+'&limit=8&sort=LATEST')).then(function(j){
-        c.news=(j&&j.feed)?j:{__err:(j.Note||j.Information)?'rate':'none'}; if(state.symbol===sym)fillNews();
-      }).catch(function(){c.news={__err:'rate'};if(state.symbol===sym)fillNews();});
+    if(!c.insiders){
+      getJSON(q('INSIDER_TRANSACTIONS','&symbol='+encodeURIComponent(sym))).then(function(j){
+        c.insiders=(j&&j.data)?j:{__err:(j.Note||j.Information)?'rate':'none'}; if(state.symbol===sym)fillInsiders();
+      }).catch(function(){c.insiders={__err:'rate'};if(state.symbol===sym)fillInsiders();});
     }
   }
 
@@ -197,8 +197,8 @@
       '<div id="setup"></div>'+
       '<div id="chartcard" class="card"></div>'+
       '<div id="profilecard" class="card"></div>'+
-      '<div id="newscard" class="card"></div>';
-    renderDaily(); fillSnapshot(); fillNews();
+      '<div id="insidercard" class="card"></div>';
+    renderDaily(); fillSnapshot(); fillInsiders();
   }
 
   function renderDaily(){
@@ -320,27 +320,29 @@
       +'</div>';
   }
 
-  // ---------- news + sentiment ----------
-  function fillNews(){
-    var el=document.getElementById('newscard'); if(!el)return;
-    var n=cache[state.symbol]&&cache[state.symbol].news;
-    if(!n){el.innerHTML='<div class="ctitle">News &amp; sentiment</div><div class="csub" style="margin-top:4px">Loading headlines…</div>';return;}
-    if(n.__err){el.innerHTML='<div class="ctitle">News &amp; sentiment</div><div class="softerr">'+(n.__err==='rate'?'Rate-limited — news will load on next try.':'No recent news for this symbol.')+'</div>';return;}
-    var feed=(n.feed||[]).slice(0,6), sym=state.symbol;
-    var scores=[];
-    feed.forEach(function(it){(it.ticker_sentiment||[]).forEach(function(t){if(t.ticker===sym)scores.push(+t.ticker_sentiment_score);});});
-    var avg=scores.length?scores.reduce(function(a,b){return a+b;},0)/scores.length:null;
-    var lab=avg==null?{t:'—',c:'#94a3b8'}:avg>=0.15?{t:'Bullish',c:'#34d399'}:avg<=-0.15?{t:'Bearish',c:'#fb7185'}:{t:'Neutral',c:'#cbd5e1'};
-    var items=feed.map(function(it){
-      var ts=it.ticker_sentiment&&it.ticker_sentiment.filter(function(t){return t.ticker===sym;})[0];
-      var sc=ts?+ts.ticker_sentiment_score:0, sl=sc>=0.15?'Bullish':sc<=-0.15?'Bearish':'Neutral', scol=sc>=0.15?'#34d399':sc<=-0.15?'#fb7185':'#94a3b8';
-      var t=it.time_published||'', dt=t?t.slice(0,4)+'-'+t.slice(4,6)+'-'+t.slice(6,8):'';
-      return '<a class="newsitem" href="'+it.url+'" target="_blank" rel="noopener"><div class="newshead">'+it.title+'</div>'
-        +'<div class="newsmeta"><span>'+(it.source||'')+'</span><span>'+dt+'</span><span style="color:'+scol+'">● '+sl+'</span></div></a>';
+  // ---------- insider transactions ----------
+  function titleCase(s){return (s||'').toLowerCase().replace(/\b([a-z])/g,function(m){return m.toUpperCase();});}
+  function fillInsiders(){
+    var el=document.getElementById('insidercard'); if(!el)return;
+    var n=cache[state.symbol]&&cache[state.symbol].insiders;
+    if(!n){el.innerHTML='<div class="ctitle">Insider transactions</div><div class="csub" style="margin-top:4px">Loading insider filings…</div>';return;}
+    if(n.__err){el.innerHTML='<div class="ctitle">Insider transactions</div><div class="softerr">'+(n.__err==='rate'?'Rate-limited — insider data will load on next try.':'No insider data for this symbol.')+'</div>';return;}
+    var data=(n.data||[]);
+    if(!data.length){el.innerHTML='<div class="ctitle">Insider transactions</div><div class="softerr">No recent insider filings.</div>';return;}
+    var stat=data.slice(0,40), buys=0, sells=0, bsh=0, ssh=0;
+    stat.forEach(function(t){var sh=+t.shares||0; if(t.acquisition_or_disposal==='A'){buys++;bsh+=sh;}else{sells++;ssh+=sh;}});
+    var net=bsh-ssh, lab=net>0?{t:'Net buying',c:'#34d399'}:net<0?{t:'Net selling',c:'#fb7185'}:{t:'Balanced',c:'#cbd5e1'};
+    var rows=data.slice(0,8).map(function(t){
+      var buy=t.acquisition_or_disposal==='A', sh=Math.round(+t.shares||0), pr=+t.share_price||0;
+      return '<div class="newsitem" style="display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:default">'
+        +'<div style="min-width:0"><div class="newshead" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+titleCase(t.executive)+'</div>'
+        +'<div class="newsmeta"><span>'+(t.executive_title||'—')+'</span><span>'+(t.transaction_date||'')+'</span></div></div>'
+        +'<div style="text-align:right;white-space:nowrap"><div style="font-size:12px;font-weight:600;color:'+(buy?'#34d399':'#fb7185')+'">'+(buy?'BUY':'SELL')+'</div>'
+        +'<div style="font-size:10px;color:#94a3b8">'+num(sh)+' sh'+(pr>0?' @ $'+pr.toFixed(2):'')+'</div></div></div>';
     }).join('');
-    el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><div class="ctitle">News &amp; sentiment</div>'
-      +'<span class="badge" style="background:rgba(255,255,255,.06);color:'+lab.c+'">'+lab.t+(avg!=null?' '+avg.toFixed(2):'')+'</span></div>'
-      +'<div class="csub">Recent headlines scored for '+sym+'. Tap to read.</div>'+(items||'<div class="softerr">No recent headlines.</div>');
+    el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><div class="ctitle">Insider transactions</div>'
+      +'<span class="badge" style="background:rgba(255,255,255,.06);color:'+lab.c+'">'+lab.t+'</span></div>'
+      +'<div class="csub">Recent Form 4 filings · '+buys+' buys / '+sells+' sells · net '+(net>=0?'+':'')+num(net)+' sh (last '+stat.length+').</div>'+rows;
   }
 
   document.getElementById('go').onclick=analyze;
