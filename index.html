@@ -258,7 +258,7 @@
 
   // ---------- price chart (SVG) with level overlays ----------
   function renderChart(p){
-    var W=340,H=180,padL=4,padR=46,padT=10,padB=16, w=p.window;
+    var W=340,H=180,padL=4,padR=84,padT=10,padB=16, w=p.window;
     var xs=W-padL-padR, ys=H-padT-padB;
     var lo=p.priceLow, hi=p.priceHigh, rng=hi-lo||1;
     function X(i){return padL+xs*(i/(w.length-1));}
@@ -266,7 +266,7 @@
     var line=w.map(function(c,i){return (i?'L':'M')+X(i).toFixed(1)+' '+Y(c.close).toFixed(1);}).join(' ');
     var area=line+' L'+X(w.length-1).toFixed(1)+' '+(padT+ys)+' L'+padL+' '+(padT+ys)+' Z';
     function hline(v,color,dash,label){var y=Y(v).toFixed(1);return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="'+color+'" stroke-width="1"'+(dash?' stroke-dasharray="'+dash+'"':'')+'/>'
-      +'<text x="'+(W-padR+3)+'" y="'+(+y+3)+'" fill="'+color+'" font-size="9">'+label+'</text>';}
+      +'<text x="'+(W-padR+4)+'" y="'+(+y+3)+'" fill="'+color+'" font-size="9"><tspan font-weight="600">'+label+'</tspan> $'+v.toFixed(2)+'</text>';}
     var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Price chart with volume profile levels">'
       +'<defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b82f6" stop-opacity="0.25"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs>'
       +'<path d="'+area+'" fill="url(#pg)"/><path d="'+line+'" fill="none" stroke="#3b82f6" stroke-width="1.6"/>'
