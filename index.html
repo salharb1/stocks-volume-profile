@@ -275,8 +275,11 @@
       +hline(p.vaLow,'#60a5fa','3 2',' VAL')
       +hline(p.lastClose,'#e2e8f0','1 2',' Now')
       +'</svg>';
+    function leg(c,ab,name){return '<span><span class="sw" style="background:'+c+'"></span><b style="color:#cbd5e1;font-weight:600">'+ab+'</b>&nbsp;'+name+'</span>';}
     document.getElementById('chartcard').innerHTML='<div class="ctitle">'+state.symbol+' · Price vs Profile Levels</div>'
-      +'<div class="csub">Last '+p.periodDays+' sessions. Amber = POC, blue dashed = value area, white = current price.</div>'+svg;
+      +'<div class="csub">Closing price over the last '+p.periodDays+' sessions, with the volume-profile levels overlaid.</div>'+svg
+      +'<div class="legend">'+leg(POC,'POC','Point of Control')+leg('#60a5fa','VAH','Value Area High')
+      +leg('#60a5fa','VAL','Value Area Low')+leg('#e2e8f0','Now','Current price')+'</div>';
   }
 
   // ---------- horizontal volume bars ----------
