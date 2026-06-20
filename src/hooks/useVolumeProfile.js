@@ -23,20 +23,12 @@ export function useVolumeProfile() {
       setError(null)
 
       try {
-        const [candlesResult, cfResult] = await Promise.allSettled([
-          fetchDailyCandles(ticker),
-          fetchCashFlow(ticker),
-        ])
-
-        if (candlesResult.status === 'rejected') throw candlesResult.reason
-
-        const candles = candlesResult.value
+        const candles = await fetchDailyCandles(ticker)
         const built = buildVolumeProfile(candles, { lookback: days })
         if (!built) {
           throw new MarketDataError('no-data', 'Not enough data to build a profile.')
         }
         setProfile(built)
-        setCashFlow(cfResult.status === 'fulfilled' ? cfResult.value : null)
         setActiveSymbol(ticker.toUpperCase())
         setStatus('ready')
       } catch (e) {
@@ -48,7 +40,14 @@ export function useVolumeProfile() {
         setProfile(null)
         setCashFlow(null)
         setStatus('error')
+        return
       }
+
+      // Fetch cash flow after the profile is displayed — keeps the critical
+      // path fast and avoids triggering Safari's concurrent-request limits.
+      fetchCashFlow(ticker)
+        .then((data) => setCashFlow(data))
+        .catch(() => setCashFlow(null))
     },
     [symbol, lookback],
   )
