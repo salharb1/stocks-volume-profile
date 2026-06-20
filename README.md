@@ -124,6 +124,27 @@ Alpha Vantage's free tier allows **25 requests/day** and **5/minute**. The app d
 
 ---
 
+## 🌐 Deploying to GitHub Pages
+
+This repo ships with a GitHub Actions workflow ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) that builds the app and publishes it to GitHub Pages on every push to `main`.
+
+**Live URL:** https://salharb1.github.io/stocks-volume-profile/
+
+### One-time setup
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+2. **Settings → Secrets and variables → Actions → New repository secret:**
+   - Name: `VITE_MARKET_API_KEY`
+   - Value: your free Alpha Vantage key
+
+   The workflow passes this into the build so the deployed site can fetch data.
+
+> ⚠️ **Security note:** Vite inlines `VITE_*` variables into the client-side JavaScript bundle. On a **public** Pages site, the key is therefore publicly visible in the shipped code. This is acceptable for a free, rate-limited Alpha Vantage key (which is itself a client-side key) — **never** put a paid or sensitive key here. For a production app, proxy requests through a small backend that keeps the key server-side.
+
+After setup, push to `main` (or run the workflow manually from the **Actions** tab) and the site deploys automatically.
+
+> The `base` path in `vite.config.js` is set to `/stocks-volume-profile/` for production builds so assets resolve correctly under the Pages subpath. If you rename the repo, update that value to match.
+
 ## ⚠️ Disclaimer
 
 This is an **educational tool**, not investment advice. Always do your own research.
