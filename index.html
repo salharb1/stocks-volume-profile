@@ -98,14 +98,15 @@
 
   <footer>
     Educational tool · not investment advice · data via
-    <a href="https://www.alphavantage.co" target="_blank" rel="noopener">Alpha Vantage</a><br>
+    <a href="https://twelvedata.com" target="_blank" rel="noopener">Twelve Data</a><br>
     Source: <a href="https://github.com/salharb1/stocks-volume-profile" target="_blank" rel="noopener">github.com/salharb1/stocks-volume-profile</a>
   </footer>
 </div>
 
 <script>
 (function(){
-  var KEYS=['X1INE4BY0VFOR5CX','7HBKTU2HEREW4NB8'];
+  var TD_KEY='82c27d713c5b40dcadd2d5f46ccf6d7a';      // Twelve Data — primary, 800/day free
+  var AV_KEYS=['X1INE4BY0VFOR5CX','7HBKTU2HEREW4NB8']; // Alpha Vantage — fallback for prices
   var POC='#f59e0b', VA='#3b82f6', OUT='#1e3a5f', HVN='#2dd4bf', LVN='#64748b';
   var state={lookback:60, symbol:null};
   var cache={};
@@ -164,19 +165,38 @@
     return c;
   }
 
-  // ---------- network (rotates across keys to extend the daily quota) ----------
+  // ---------- network ----------
+  // Twelve Data (primary). Errors arrive in-body as {status:'error',code,message}.
+  function tdGet(path,params){
+    return fetch('https://api.twelvedata.com/'+path+'?'+params+'&apikey='+TD_KEY).then(function(r){return r.json();}).then(function(j){
+      if(j&&j.status==='error') throw {msg:j.message||'error',rl:j.code===429,bad:j.code===400||j.code===404};
+      return j;
+    });
+  }
+  // Alpha Vantage (fallback for prices). Rotates across keys.
   function q(fn,extra,key){return 'https://www.alphavantage.co/query?function='+fn+'&apikey='+key+(extra||'');}
   function avFetch(fn,extra){
     var i=0;
     function attempt(){
-      return fetch(q(fn,extra,KEYS[i])).then(function(r){
+      return fetch(q(fn,extra,AV_KEYS[i])).then(function(r){
         if(r.status===429) return advance();
         if(!r.ok) throw {msg:'http'};
         return r.json().then(function(j){ if(j&&(j.Note||j.Information)) return advance(); return j; });
       });
     }
-    function advance(){ i++; if(i<KEYS.length) return attempt(); throw {msg:'rate',rl:true}; }
+    function advance(){ i++; if(i<AV_KEYS.length) return attempt(); throw {msg:'rate',rl:true}; }
     return attempt();
+  }
+  // Daily candles: Twelve Data first, Alpha Vantage on failure. Ascending [{date,low,high,close,volume}].
+  function parseTD(j){
+    var v=j&&j.values; if(!v||!v.length) throw {msg:'No price data for this symbol.'};
+    return v.map(function(r){return {date:r.datetime,low:+r.low,high:+r.high,close:+r.close,volume:+r.volume};})
+      .filter(function(x){return isFinite(x.close)&&isFinite(x.volume);}).reverse();
+  }
+  function fetchCandles(sym){
+    return tdGet('time_series','symbol='+encodeURIComponent(sym)+'&interval=1day&outputsize=300').then(parseTD)
+      .catch(function(e){ if(e&&e.bad) throw {msg:'Couldn’t find that ticker. Check the symbol.'};
+        return avFetch('TIME_SERIES_DAILY','&symbol='+encodeURIComponent(sym)+'&outputsize=compact').then(parseSeries); });
   }
 
   function analyze(){
@@ -190,28 +210,33 @@
     if(fresh){cache[sym]=cache[sym]||{};cache[sym].daily=fresh;renderAll();document.getElementById('go').disabled=false;return;}
 
     body.innerHTML='<div class="msg"><div class="spin"></div>Loading market data…</div>';
-    avFetch('TIME_SERIES_DAILY','&symbol='+encodeURIComponent(sym)+'&outputsize=compact')
-      .then(function(j){var c=parseSeries(j);cache[sym]=cache[sym]||{};cache[sym].daily=c;lsSet('vp:daily:'+sym,c);renderAll();})
+    fetchCandles(sym)
+      .then(function(c){cache[sym]=cache[sym]||{};cache[sym].daily=c;lsSet('vp:daily:'+sym,c);renderAll();})
       .catch(function(e){
         var stale=lsGet('vp:daily:'+sym,0);
         if(stale){cache[sym]=cache[sym]||{};cache[sym].daily=stale;state.stale=true;renderAll();}
-        else{var m=e&&e.rl?'Daily API limit reached on all keys — resets once per day.':(e&&e.msg&&e.msg.length>5?e.msg:'Network problem. Check your connection and retry.');body.innerHTML='<div class="err">'+m+'</div>';}
+        else{var m=e&&e.rl?'Daily API limit reached — resets once per day.':(e&&e.msg&&e.msg.length>5?e.msg:'Network problem. Check your connection and retry.');body.innerHTML='<div class="err">'+m+'</div>';}
       })
       .finally(function(){document.getElementById('go').disabled=false;});
   }
 
-  // lazily fetch an extra endpoint (fundamentals/insiders) only on user request
-  function loadExtra(field,fn,extra,lskey,sym,refill,cardId,title){
+  // lazily fetch extras (Twelve Data) only on user request
+  function extraErr(cardId,title,e,retry){
     var el=document.getElementById(cardId);
-    el.innerHTML='<div class="card"><div class="ctitle">'+title+'</div><div class="csub" style="margin-top:4px">Loading…</div></div>';
-    avFetch(fn,extra).then(function(j){
-      var ok=field==='overview'?(j&&j.Symbol):(j&&j.data);
-      if(ok){cache[sym]=cache[sym]||{};cache[sym][field]=j;lsSet(lskey,j);if(state.symbol===sym)refill();}
-      else throw {rl:!!(j.Note||j.Information)};
-    }).catch(function(e){
-      el.innerHTML='<div class="card"><div class="ctitle">'+title+'</div><div class="softerr">'+(e&&e.rl?'Daily API limit reached — resets once per day.':'Unavailable for this symbol.')+'</div><button id="'+cardId+'rt" class="loadbtn">Retry</button></div>';
-      document.getElementById(cardId+'rt').onclick=function(){loadExtra(field,fn,extra,lskey,sym,refill,cardId,title);};
-    });
+    el.innerHTML='<div class="card"><div class="ctitle">'+title+'</div><div class="softerr">'+(e&&e.rl?'Daily API limit reached — resets once per day.':'Unavailable for this symbol.')+'</div><button id="'+cardId+'rt" class="loadbtn">Retry</button></div>';
+    document.getElementById(cardId+'rt').onclick=retry;
+  }
+  function loadFundamentals(sym){
+    document.getElementById('snapshot').innerHTML='<div class="card"><div class="ctitle">Company snapshot</div><div class="csub" style="margin-top:4px">Loading…</div></div>';
+    Promise.all([tdGet('profile','symbol='+encodeURIComponent(sym)),tdGet('statistics','symbol='+encodeURIComponent(sym))])
+      .then(function(res){var o={profile:res[0],stats:res[1]};cache[sym]=cache[sym]||{};cache[sym].overview=o;lsSet('vp:ov:'+sym,o);if(state.symbol===sym)fillSnapshot();})
+      .catch(function(e){extraErr('snapshot','Company snapshot',e,function(){loadFundamentals(sym);});});
+  }
+  function loadInsiders(sym){
+    document.getElementById('insidercard').innerHTML='<div class="card"><div class="ctitle">Insider transactions</div><div class="csub" style="margin-top:4px">Loading…</div></div>';
+    tdGet('insider_transactions','symbol='+encodeURIComponent(sym))
+      .then(function(j){cache[sym]=cache[sym]||{};cache[sym].insiders=j;lsSet('vp:ins:'+sym,j);if(state.symbol===sym)fillInsiders();})
+      .catch(function(e){extraErr('insidercard','Insider transactions',e,function(){loadInsiders(sym);});});
   }
 
   // ---------- render skeleton ----------
@@ -230,8 +255,8 @@
   function renderDaily(){
     var sym=state.symbol, candles=cache[sym].daily, p=buildProfile(candles,state.lookback);
     if(!p){document.getElementById('entry').innerHTML='<div class="err">Not enough data to build a profile.</div>';return;}
-    var closes=p.window.map(function(c){return c.close;});
-    var ind={rsi:rsi(closes,14),sma20:sma(closes,20),sma50:sma(closes,50),atr:atr(p.window,14)};
+    var fcloses=candles.map(function(c){return c.close;});
+    var ind={rsi:rsi(fcloses,14),sma20:sma(fcloses,20),sma50:sma(fcloses,50),sma200:sma(fcloses,200),atr:atr(candles,14)};
     var lc=p.lastClose, distPoc=((lc-p.poc.mid)/p.poc.mid*100);
 
     // entry zone
@@ -243,7 +268,7 @@
     if(ind.sma20&&Math.abs(p.poc.mid-ind.sma20)/p.poc.mid<0.02)conf.push('POC aligns with 20-day MA');
     document.getElementById('entry').innerHTML=
       '<div class="card kezc"><div class="kez"><span>◎ Key Entry Zone</span>'
-      +'<span class="badge" style="background:rgba(16,185,129,.15);color:#34d399">● LIVE · ALPHA VANTAGE</span></div>'
+      +'<span class="badge" style="background:rgba(16,185,129,.15);color:#34d399">● LIVE · TWELVE DATA</span></div>'
       +'<div style="font-size:12px;color:#94a3b8;margin-top:14px">High Volume Node for <b style="color:#e2e8f0">'+sym+'</b> at</div>'
       +'<div class="poc">'+usd(p.poc.mid)+'</div>'
       +'<div style="font-size:11px;color:#64748b;margin-top:2px">Current price '+usd(lc)+' · '+(distPoc>=0?'+':'')+distPoc.toFixed(1)+'% vs POC</div>'
@@ -254,6 +279,7 @@
       +'<div class="ind">'+indPill('RSI 14',ind.rsi!=null?ind.rsi.toFixed(0):'—',ind.rsi==null?'#94a3b8':ind.rsi>=70?'#fb7185':ind.rsi<=30?'#34d399':'#cbd5e1')
         +indPill('20D MA',ind.sma20?usd(ind.sma20):'—',ind.sma20&&lc>=ind.sma20?'#34d399':'#fb7185')
         +indPill('50D MA',ind.sma50?usd(ind.sma50):'—',ind.sma50&&lc>=ind.sma50?'#34d399':'#fb7185')
+        +indPill('200D MA',ind.sma200?usd(ind.sma200):'—',ind.sma200&&lc>=ind.sma200?'#34d399':'#fb7185')
         +indPill('ATR 14',ind.atr?usd(ind.atr):'—','#cbd5e1')+'</div>'
       +'<div style="font-size:12px;color:'+rel.c+';margin-top:13px;line-height:1.5">'+rel.t+'</div>'
       +(conf.length?'<div style="font-size:11px;color:#2dd4bf;margin-top:6px">✓ '+conf.join(' · ')+'</div>':'')
@@ -331,19 +357,21 @@
     var el=document.getElementById('snapshot'); if(!el)return; var sym=state.symbol;
     var o=(cache[sym]&&cache[sym].overview)||lsGet('vp:ov:'+sym,7*DAY);
     if(o){cache[sym]=cache[sym]||{};cache[sym].overview=o;renderSnapshot(el,sym,o);return;}
-    el.innerHTML='<div class="card"><div class="ctitle">Company snapshot</div><div class="csub" style="margin-top:4px">Market cap, P/E, EPS, beta &amp; 52-week range.</div>'
-      +'<button id="loadov" class="loadbtn">Load fundamentals · 1 API call</button></div>';
-    document.getElementById('loadov').onclick=function(){loadExtra('overview','OVERVIEW','&symbol='+encodeURIComponent(sym),'vp:ov:'+sym,sym,fillSnapshot,'snapshot','Company snapshot');};
+    el.innerHTML='<div class="card"><div class="ctitle">Company snapshot</div><div class="csub" style="margin-top:4px">Sector, market cap, P/E &amp; 52-week range.</div>'
+      +'<button id="loadov" class="loadbtn">Load fundamentals</button></div>';
+    document.getElementById('loadov').onclick=function(){loadFundamentals(sym);};
   }
   function renderSnapshot(el,sym,o){
-    var lc=cache[sym].daily.slice(-1)[0].close;
-    var lo=+o['52WeekLow'], hi=+o['52WeekHigh'], pos=isFinite(lo)&&isFinite(hi)&&hi>lo?Math.max(0,Math.min(100,(lc-lo)/(hi-lo)*100)):null;
-    el.innerHTML='<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
-      +'<div><div style="font-size:16px;font-weight:600;color:#fff">'+(o.Name||state.symbol)+'</div>'
-      +'<div style="font-size:11px;color:#64748b;margin-top:2px">'+[o.Exchange,o.Sector,o.Industry].filter(Boolean).join(' · ')+'</div></div></div>'
+    var prof=o.profile||{}, vm=(o.stats&&o.stats.statistics&&o.stats.statistics.valuations_metrics)||{};
+    var candles=cache[sym].daily, lc=candles.slice(-1)[0].close;
+    var yr=candles.slice(-252), lo=Math.min.apply(null,yr.map(function(c){return c.low;})), hi=Math.max.apply(null,yr.map(function(c){return c.high;}));
+    var pos=hi>lo?Math.max(0,Math.min(100,(lc-lo)/(hi-lo)*100)):null;
+    function pe(v){return v&&isFinite(+v)?(+v).toFixed(1):'—';}
+    el.innerHTML='<div class="card"><div><div style="font-size:16px;font-weight:600;color:#fff">'+(prof.name||sym)+'</div>'
+      +'<div style="font-size:11px;color:#64748b;margin-top:2px">'+[prof.exchange,prof.sector,prof.industry].filter(Boolean).join(' · ')+'</div></div>'
       +'<div class="grid2" style="grid-template-columns:repeat(4,1fr);margin-top:13px">'
-      +sm('Mkt Cap',cap(o.MarketCapitalization),'#e2e8f0')+sm('P/E',o.PERatio&&o.PERatio!=='None'?(+o.PERatio).toFixed(1):'—','#e2e8f0')
-      +sm('EPS',o.EPS&&o.EPS!=='None'?usd(+o.EPS):'—','#e2e8f0')+sm('Beta',o.Beta&&o.Beta!=='None'?(+o.Beta).toFixed(2):'—','#e2e8f0')+'</div>'
+      +sm('Mkt Cap',cap(vm.market_capitalization),'#e2e8f0')+sm('P/E',pe(vm.trailing_pe),'#e2e8f0')
+      +sm('Fwd P/E',pe(vm.forward_pe),'#e2e8f0')+sm('P/B',pe(vm.price_to_book_mrq),'#e2e8f0')+'</div>'
       +(pos!=null?'<div style="margin-top:14px"><div style="font-size:9px;letter-spacing:.06em;color:#64748b;text-transform:uppercase">52-week range</div>'
         +'<div class="rng"><div class="rngmark" style="left:calc('+pos.toFixed(1)+'% - 1.5px)"></div></div>'
         +'<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8"><span>'+usd(lo)+'</span><span style="color:#fff">'+usd(lc)+'</span><span>'+usd(hi)+'</span></div></div>':'')
@@ -352,29 +380,31 @@
 
   // ---------- insider transactions ----------
   function titleCase(s){return (s||'').toLowerCase().replace(/\b([a-z])/g,function(m){return m.toUpperCase();});}
+  function insDir(t){return /purchas|buy|bought|acqui/i.test(t.description||'')?1:/sale|sold|sell|dispos/i.test(t.description||'')?-1:(+t.value<0?-1:1);}
+  function insPrice(t){var m=/([\d.]+)\s*per share/i.exec(t.description||'');return m?+m[1]:0;}
   function fillInsiders(){
     var el=document.getElementById('insidercard'); if(!el)return; var sym=state.symbol;
     var n=(cache[sym]&&cache[sym].insiders)||lsGet('vp:ins:'+sym,1*DAY);
-    if(!n){el.innerHTML='<div class="ctitle">Insider transactions</div><div class="csub" style="margin-top:4px">Recent Form 4 buys &amp; sells by company executives.</div>'
-      +'<button id="loadins" class="loadbtn">Load insider trades · 1 API call</button></div>';
-      document.getElementById('loadins').onclick=function(){loadExtra('insiders','INSIDER_TRANSACTIONS','&symbol='+encodeURIComponent(sym),'vp:ins:'+sym,sym,fillInsiders,'insidercard','Insider transactions');};return;}
+    if(!n){el.innerHTML='<div class="ctitle">Insider transactions</div><div class="csub" style="margin-top:4px">Recent buys &amp; sells by company executives.</div>'
+      +'<button id="loadins" class="loadbtn">Load insider trades</button></div>';
+      document.getElementById('loadins').onclick=function(){loadInsiders(sym);};return;}
     cache[sym]=cache[sym]||{};cache[sym].insiders=n;
-    var data=(n.data||[]);
+    var data=(n.insider_transactions||[]);
     if(!data.length){el.innerHTML='<div class="ctitle">Insider transactions</div><div class="softerr">No recent insider filings.</div>';return;}
     var stat=data.slice(0,40), buys=0, sells=0, bsh=0, ssh=0;
-    stat.forEach(function(t){var sh=+t.shares||0; if(t.acquisition_or_disposal==='A'){buys++;bsh+=sh;}else{sells++;ssh+=sh;}});
+    stat.forEach(function(t){var sh=Math.abs(+t.shares||0); if(insDir(t)>0){buys++;bsh+=sh;}else{sells++;ssh+=sh;}});
     var net=bsh-ssh, lab=net>0?{t:'Net buying',c:'#34d399'}:net<0?{t:'Net selling',c:'#fb7185'}:{t:'Balanced',c:'#cbd5e1'};
     var rows=data.slice(0,8).map(function(t){
-      var buy=t.acquisition_or_disposal==='A', sh=Math.round(+t.shares||0), pr=+t.share_price||0;
+      var buy=insDir(t)>0, sh=Math.round(Math.abs(+t.shares||0)), pr=insPrice(t);
       return '<div class="newsitem" style="display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:default">'
-        +'<div style="min-width:0"><div class="newshead" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+titleCase(t.executive)+'</div>'
-        +'<div class="newsmeta"><span>'+(t.executive_title||'—')+'</span><span>'+(t.transaction_date||'')+'</span></div></div>'
+        +'<div style="min-width:0"><div class="newshead" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+titleCase(t.full_name)+'</div>'
+        +'<div class="newsmeta"><span>'+(t.position||'—')+'</span><span>'+(t.date_reported||'')+'</span></div></div>'
         +'<div style="text-align:right;white-space:nowrap"><div style="font-size:12px;font-weight:600;color:'+(buy?'#34d399':'#fb7185')+'">'+(buy?'BUY':'SELL')+'</div>'
         +'<div style="font-size:10px;color:#94a3b8">'+num(sh)+' sh'+(pr>0?' @ $'+pr.toFixed(2):'')+'</div></div></div>';
     }).join('');
     el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><div class="ctitle">Insider transactions</div>'
       +'<span class="badge" style="background:rgba(255,255,255,.06);color:'+lab.c+'">'+lab.t+'</span></div>'
-      +'<div class="csub">Recent Form 4 filings · '+buys+' buys / '+sells+' sells · net '+(net>=0?'+':'')+num(net)+' sh (last '+stat.length+').</div>'+rows;
+      +'<div class="csub">Recent filings · '+buys+' buys / '+sells+' sells · net '+(net>=0?'+':'')+num(net)+' sh (last '+stat.length+').</div>'+rows;
   }
 
   document.getElementById('go').onclick=analyze;
