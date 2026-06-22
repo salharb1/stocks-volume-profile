@@ -228,8 +228,11 @@
   }
   function loadFundamentals(sym){
     document.getElementById('snapshot').innerHTML='<div class="card"><div class="ctitle">Company snapshot</div><div class="csub" style="margin-top:4px">Loading…</div></div>';
-    Promise.all([tdGet('profile','symbol='+encodeURIComponent(sym)),tdGet('statistics','symbol='+encodeURIComponent(sym))])
-      .then(function(res){var o={profile:res[0],stats:res[1]};cache[sym]=cache[sym]||{};cache[sym].overview=o;lsSet('vp:ov:'+sym,o);if(state.symbol===sym)fillSnapshot();})
+    // Sequential fetches — parallel concurrent requests cause CORS errors on Safari
+    tdGet('profile','symbol='+encodeURIComponent(sym))
+      .then(function(prof){return tdGet('statistics','symbol='+encodeURIComponent(sym)).then(function(stats){return {profile:prof,stats:stats};});})
+      .then(function(o){return tdGet('cash_flow','symbol='+encodeURIComponent(sym)+'&period=annual&outputsize=4').then(function(cf){o.cashflow=cf;return o;}).catch(function(){return o;});})
+      .then(function(o){cache[sym]=cache[sym]||{};cache[sym].overview=o;lsSet('vp:ov:'+sym,o);if(state.symbol===sym)fillSnapshot();})
       .catch(function(e){extraErr('snapshot','Company snapshot',e,function(){loadFundamentals(sym);});});
   }
   function loadInsiders(sym){
@@ -352,6 +355,27 @@
       +'<span><span class="sw" style="background:'+VA+'"></span>Value area</span></div>';
   }
 
+  // ---------- free cash flow renderer (called from renderSnapshot) ----------
+  function renderFCF(o){
+    var rows=(o.cashflow&&o.cashflow.cash_flow)||[];
+    var items=rows.filter(function(r){return r.free_cash_flow!=null;}).slice(0,4);
+    if(!items.length)return '';
+    var maxAbs=Math.max.apply(null,items.map(function(r){return Math.abs(+r.free_cash_flow);}));
+    var bars=items.map(function(r){
+      var v=+r.free_cash_flow, pos=v>=0, pct=maxAbs>0?Math.round(Math.abs(v)/maxAbs*100):0;
+      var yr=(r.fiscal_date||'').slice(0,4);
+      var label=v>=1e12?'$'+(v/1e12).toFixed(2)+'T':v>=1e9?'$'+(v/1e9).toFixed(1)+'B':v>=-1e6?'$'+(v/1e6).toFixed(0)+'M':cap(v);
+      return '<div style="flex:1;min-width:0">'
+        +'<div style="font-size:9px;color:#64748b;text-align:center;margin-bottom:4px">'+yr+'</div>'
+        +'<div style="height:44px;display:flex;align-items:flex-end;justify-content:center">'
+        +'<div style="width:100%;max-width:36px;height:'+pct+'%;min-height:4px;border-radius:3px 3px 0 0;background:'+(pos?'#22c55e':'#fb7185')+'"></div></div>'
+        +'<div style="font-size:9px;font-weight:600;color:'+(pos?'#22c55e':'#fb7185')+';text-align:center;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(pos?'':'-')+label.replace('-','')+'</div>'
+        +'</div>';
+    }).join('');
+    return '<div style="margin-top:14px"><div style="font-size:9px;letter-spacing:.06em;color:#64748b;text-transform:uppercase;margin-bottom:6px">Free Cash Flow (Annual)</div>'
+      +'<div style="display:flex;gap:6px;align-items:flex-end">'+bars+'</div></div>';
+  }
+
   // ---------- fundamentals snapshot ----------
   function fillSnapshot(){
     var el=document.getElementById('snapshot'); if(!el)return; var sym=state.symbol;
@@ -375,6 +399,7 @@
       +(pos!=null?'<div style="margin-top:14px"><div style="font-size:9px;letter-spacing:.06em;color:#64748b;text-transform:uppercase">52-week range</div>'
         +'<div class="rng"><div class="rngmark" style="left:calc('+pos.toFixed(1)+'% - 1.5px)"></div></div>'
         +'<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8"><span>'+usd(lo)+'</span><span style="color:#fff">'+usd(lc)+'</span><span>'+usd(hi)+'</span></div></div>':'')
+      +renderFCF(o)
       +'</div>';
   }
 
