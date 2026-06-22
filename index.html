@@ -287,7 +287,8 @@
       +(conf.length?'<div style="font-size:11px;color:#2dd4bf;margin-top:6px">✓ '+conf.join(' · ')+'</div>':'')
       +'<div style="font-size:10px;color:#475569;margin-top:7px">Based on the last '+p.periodDays+' trading days of real market data.</div></div>';
 
-    renderSetup(p,ind);
+    var pSetup=buildProfile(candles,90)||p; // fixed 90-day window keeps setup levels stable
+    renderSetup(pSetup,ind);
     renderChart(p);
     renderProfileBars(p);
   }
